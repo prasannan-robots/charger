@@ -21,6 +21,7 @@ class _MapScreenState extends State<MapScreen> {
   Set<Polyline> _polylines = {};
   bool _isLoading = false;
   final GroundData _map = GroundData();
+  bool _searchByOpeningHours = false;
   LatLng _currentPosition = const LatLng(
       13.085758559399656, 80.1754404576725); // Example start location
 // 11.387819148378416, 79.73058865396625
@@ -37,11 +38,49 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
+  void _showSearchOptionsDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Search Options'),
+          content: const Text('Do you want to search by opening hours?'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('No'),
+              onPressed: () {
+                setState(() {
+                  _searchByOpeningHours = false;
+                });
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: const Text('Yes'),
+              onPressed: () {
+                setState(() {
+                  _searchByOpeningHours = true;
+                });
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Charger'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: _showSearchOptionsDialog,
+          ),
+        ],
       ),
       body: Stack(
         children: [
@@ -176,6 +215,10 @@ class _MapScreenState extends State<MapScreen> {
                       ],
                     ))),
           ),
+          if (_isLoading)
+            const Center(
+              child: CircularProgressIndicator(),
+            ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -191,8 +234,8 @@ class _MapScreenState extends State<MapScreen> {
               _parseLatLng(source), _parseLatLng(destination));
           double rangeKm = _map.estimateRange(40, rangekm);
 
-          Set<Marker> chargingStations =
-              await _map.selectChargingStations(routeData, rangeKm);
+          Set<Marker> chargingStations = await _map.selectChargingStations(
+              routeData, rangeKm, _searchByOpeningHours);
 
           setState(() {
             _isLoading = false;

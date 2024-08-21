@@ -42,7 +42,7 @@ class GroundData {
   }
 
   Future<Set<Marker>> fetchChargingStations(
-      double latitude, double longitude) async {
+      double latitude, double longitude, bool selectchargingopen) async {
     const url = 'https://places.googleapis.com/v1/places:searchNearby';
     final headers = {
       'Content-Type': 'application/json',
@@ -72,7 +72,14 @@ class GroundData {
         jsonResponse.containsKey('places') ? jsonResponse['places'] : null;
 
     if (places != null) {
-      Set<Marker> markers = places.map((place) {
+      Set<Marker> markers = places
+          .where((place) =>
+              !selectchargingopen ||
+              (place['currentOpeningHours'] != null &&
+                  place['currentOpeningHours']['openNow'] == true) ||
+              (place['regularOpeningHours'] != null &&
+                  place['regularOpeningHours']['openNow'] == true))
+          .map((place) {
         return Marker(
           markerId: MarkerId(place['displayName']['text']),
           position: LatLng(
@@ -86,7 +93,7 @@ class GroundData {
   }
 
   Future<Set<Marker>> selectChargingStations(
-      List<LatLng> routePoints, double rangeKm) async {
+      List<LatLng> routePoints, double rangeKm, bool selectchargingopen) async {
     Set<Marker> chargingStations = {};
     double traveledDistance = 0.0;
 
@@ -105,7 +112,7 @@ class GroundData {
         // Fetch nearby charging stations using the Google Places API
         print('Checking for charging stations at $stepLocation');
         Set<Marker> nearbyStations = await fetchChargingStations(
-            stepLocation.latitude, stepLocation.longitude);
+            stepLocation.latitude, stepLocation.longitude, selectchargingopen);
 
         if (nearbyStations.isNotEmpty) {
           chargingStations
@@ -134,7 +141,9 @@ class GroundData {
                 'BackTrack: Checking for charging stations at ${backtrackLocation.latitude} ${backtrackLocation.longitude} $j');
 
             Set<Marker> backtrackStations = await fetchChargingStations(
-                backtrackLocation.latitude, backtrackLocation.longitude);
+                backtrackLocation.latitude,
+                backtrackLocation.longitude,
+                selectchargingopen);
 
             if (backtrackStations.isNotEmpty) {
               chargingStations
