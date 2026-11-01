@@ -41,3 +41,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Secrets (Maps API key) - see README
+/ios/Flutter/Secrets.xcconfig
+.env

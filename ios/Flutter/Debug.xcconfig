@@ -1,1 +1,3 @@
 #include "Generated.xcconfig"
+// Optional, gitignored: holds MAPS_API_KEY=... (see Secrets.xcconfig.example)
+#include? "Secrets.xcconfig"
