@@ -1,30 +1,97 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+import 'dart:math';
 
-import 'package:flutter/material.dart';
+import 'package:charger/google_api.dart';
+import 'package:charger/planner.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import 'package:charger/main.dart';
+/// A straight route along the equator with a point every [stepKm].
+List<LatLng> straightRoute(double lengthKm, {double stepKm = 1}) {
+  const degPerKm = 360 / (2 * pi * 6371); // same Earth radius as the planner
+  return [
+    for (var km = 0.0; km <= lengthKm + 1e-9; km += stepKm)
+      LatLng(0, km * degPerKm),
+  ];
+}
+
+double kmAlong(LatLng p) => p.longitude * (2 * pi * 6371) / 360;
+
+ChargingStation stationAt(LatLng p) => ChargingStation(
+      id: 'st-${kmAlong(p).round()}',
+      name: 'Station ${kmAlong(p).round()}',
+      position: p,
+    );
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test('decodes Google sample polyline', () {
+    final points = decodePolyline('_p~iF~ps|U_ulLnnqC_mqNvxq`@');
+    expect(points.map((p) => [p.latitude, p.longitude]).toList(), [
+      [38.5, -120.2],
+      [40.7, -120.95],
+      [43.252, -126.453],
+    ]);
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  test('estimateRange scales and clamps the battery percentage', () {
+    expect(estimateRange(50, 300), 150);
+    expect(estimateRange(150, 300), 300);
+    expect(estimateRange(-5, 300), 0);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  test('short trip needs no charging and makes no API calls', () async {
+    var calls = 0;
+    final stops = await planChargingStops(
+      route: straightRoute(50),
+      initialRangeKm: 100,
+      rangeAfterChargeKm: 100,
+      findChargers: (at) async {
+        calls++;
+        return [stationAt(at)];
+      },
+    );
+    expect(stops, isEmpty);
+    expect(calls, 0);
+  });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  test('stops before the battery reserve on a long trip', () async {
+    final stops = await planChargingStops(
+      route: straightRoute(250),
+      initialRangeKm: 100, // 90 km usable with the 10% reserve
+      rangeAfterChargeKm: 100,
+      findChargers: (at) async => [stationAt(at)],
+    );
+    expect(stops.map((s) => kmAlong(s.position).round()), [90, 180]);
+  });
+
+  test('backtracks to an earlier charger but never past the last stop',
+      () async {
+    final searchedKm = <int>[];
+    final stops = await planChargingStops(
+      route: straightRoute(150),
+      initialRangeKm: 100,
+      rangeAfterChargeKm: 100,
+      findChargers: (at) async {
+        final km = kmAlong(at).round();
+        searchedKm.add(km);
+        // Only one charger exists, at km 60.
+        return km == 60 ? [stationAt(at)] : const <ChargingStation>[];
+      },
+    );
+    expect(stops.map((s) => kmAlong(s.position).round()), [60]);
+    // Searched 90, 85, ..., 60 in 5 km steps, then nothing more was needed.
+    expect(searchedKm.first, 90);
+    expect(searchedKm.every((km) => km >= 60), isTrue);
+  });
+
+  test('throws when no charger is reachable', () async {
+    expect(
+      planChargingStops(
+        route: straightRoute(200),
+        initialRangeKm: 100,
+        rangeAfterChargeKm: 100,
+        findChargers: (_) async => const [],
+      ),
+      throwsA(isA<NoChargerInRangeException>()),
+    );
   });
 }
